@@ -32,5 +32,11 @@ def verify_recaptcha():
     else:
         return jsonify({'success': False, 'error-codes': verification_result.get('error-codes')}), 400
 
+@app.route('/', methods=['GET'])
+def welcome():
+    return "Welcome to 3feds API"
+
+
+
 if __name__ == '__main__':
     app.run(debug=True)
