@@ -1,42 +1,66 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests
+import art
+import json
+import os
+import threading
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-RECAPTCHA_SECRET_KEY = '6LdKSPYpAAAAAJrtV3ydw3Pkk5UlzwyhJ-MiGdFs'  # Replace with your actual reCAPTCHA secret key
+# List of available styles (fonts) from the art library
+available_styles = art.FONT_NAMES
+scores_file = 'scores.json'
+lock = threading.Lock()  # To ensure thread safety for file operations
 
-@app.route('/verify-recaptcha', methods=['POST'])
-def verify_recaptcha():
-    response_token = request.form.get('g-recaptcha-response')
-    remote_ip = request.remote_addr
+# Initialize scores.json if it doesn't exist
+if not os.path.exists(scores_file):
+    with open(scores_file, 'w') as f:
+        json.dump({style: 0 for style in available_styles}, f)
 
-    if not response_token:
-        return jsonify({'success': False, 'error': 'missing-input-response'}), 400
+@app.route('/')
+def home():
+    return "Welcome to the ASCII Art Generator!"
 
-    # Verify the response token with Google reCAPTCHA API
-    verification_response = requests.post(
-        'https://www.google.com/recaptcha/api/siteverify',
-        data={
-            'secret': RECAPTCHA_SECRET_KEY,
-            'response': response_token,
-            'remoteip': remote_ip
-        }
-    )
+@app.route('/styles', methods=['GET'])
+def get_styles():
+    return jsonify({'available_styles': available_styles})
 
-    verification_result = verification_response.json()
+@app.route('/ascii-art', methods=['POST'])
+def generate_ascii_art():
+    data = request.get_json()
+    print(data)
+    if not data or 'text' not in data or 'style' not in data:
+        return jsonify({'error': 'Invalid request. Please provide text and style as JSON data'}), 400
 
-    if verification_result.get('success'):
-        return jsonify({'success': True}), 200
-    else:
-        return jsonify({'success': False, 'error-codes': verification_result.get('error-codes')}), 400
+    text = data['text']
+    style = data['style']
 
-@app.route('/', methods=['GET'])
-def welcome():
-    return "Welcome to 3feds API"
+    if style not in available_styles:
+        return jsonify({'error': 'Invalid style. Please choose from /styles'}), 400
 
+    try:
+        ascii_art = art.text2art(text, font=style)
+        update_score(style)
+        return jsonify({'ascii_art': ascii_art})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
+def update_score(style):
+    with lock:
+        with open(scores_file, 'r+') as f:
+            scores = json.load(f)
+            scores[style] += 1
+            f.seek(0)
+            json.dump(scores, f)
+            f.truncate()
+
+@app.route('/scores', methods=['GET'])
+def get_scores():
+    with lock:
+        with open(scores_file, 'r') as f:
+            scores = json.load(f)
+    return jsonify(scores)
 
 if __name__ == '__main__':
     app.run(debug=True)
